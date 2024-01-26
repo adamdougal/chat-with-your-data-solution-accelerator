@@ -2,7 +2,7 @@ from typing import List
 from azure.ai.contentsafety import ContentSafetyClient
 from azure.core.credentials import AzureKeyCredential
 from azure.core.exceptions import HttpResponseError
-from azure.ai.contentsafety.models import AnalyzeTextOptions
+from azure.ai.contentsafety.models import AnalyzeTextOptions, TextCategory
 from ..helpers.EnvHelper import EnvHelper
 from .AnswerProcessingBase import AnswerProcessingBase
 from ..common.Answer import Answer
@@ -39,8 +39,13 @@ class ContentSafetyChecker(AnswerProcessingBase):
             raise
 
         filtered_text = text
+                
+        hate_result = next(item for item in response.categories_analysis if item.category == TextCategory.HATE)
+        self_harm_result = next(item for item in response.categories_analysis if item.category == TextCategory.SELF_HARM)
+        sexual_result = next(item for item in response.categories_analysis if item.category == TextCategory.SEXUAL)
+        violence_result = next(item for item in response.categories_analysis if item.category == TextCategory.VIOLENCE)
     
-        if response.hate_result.severity > 0 or response.self_harm_result.severity > 0 or response.sexual_result.severity > 0 or response.violence_result.severity > 0:
+        if hate_result.severity > 0 or self_harm_result.severity > 0 or sexual_result.severity > 0 or violence_result.severity > 0:
             filtered_text = response_template
        
         return filtered_text
