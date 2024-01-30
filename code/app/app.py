@@ -2,7 +2,8 @@ import json
 import os
 import logging
 import requests
-import openai
+from openai import AzureOpenAI
+from azure.identity import DefaultAzureCredential, get_bearer_token_provider
 
 # Fixing MIME types for static files under Windows
 import mimetypes
@@ -62,6 +63,7 @@ AZURE_OPENAI_API_VERSION = os.environ.get("AZURE_OPENAI_API_VERSION", "2023-06-0
 AZURE_OPENAI_STREAM = os.environ.get("AZURE_OPENAI_STREAM", "true")
 AZURE_OPENAI_MODEL_NAME = os.environ.get("AZURE_OPENAI_MODEL_NAME", "gpt-35-turbo") # Name of the model, e.g. 'gpt-35-turbo' or 'gpt-4'
 AZURE_AUTH_TYPE = os.environ.get("AZURE_AUTH_TYPE", "keys")
+AZURE_OPENAI_API_BASE = f"https://{AZURE_OPENAI_RESOURCE}.openai.azure.com/"
 
 SHOULD_STREAM = True if AZURE_OPENAI_STREAM.lower() == "true" else False
 
@@ -71,8 +73,8 @@ def is_chat_model():
     return False
 
 def should_use_data():
-    if AZURE_SEARCH_SERVICE and AZURE_SEARCH_INDEX and AZURE_SEARCH_KEY:
-        return True
+    # if AZURE_SEARCH_SERVICE and AZURE_SEARCH_INDEX and AZURE_SEARCH_KEY:
+        # return True
     return False
 
 def prepare_body_headers_with_data(request):
@@ -185,7 +187,7 @@ def conversation_with_data(request):
 def stream_without_data(response):
     responseText = ""
     for line in response:
-        deltaText = line["choices"][0]["delta"].get('content')
+        deltaText = line.choices[0].delta.get('content')
         if deltaText and deltaText != "[DONE]":
             responseText += deltaText
 
@@ -205,10 +207,19 @@ def stream_without_data(response):
 
 
 def conversation_without_data(request):
-    openai.api_type = "azure"
-    openai.api_base = f"https://{AZURE_OPENAI_RESOURCE}.openai.azure.com/"
-    openai.api_version = "2023-03-15-preview"
-    openai.api_key = AZURE_OPENAI_KEY
+    if AZURE_AUTH_TYPE == "keys":
+        client = AzureOpenAI(
+            api_version=AZURE_OPENAI_API_VERSION,
+            azure_endpoint=AZURE_OPENAI_API_BASE,
+            api_key=AZURE_OPENAI_KEY
+        )
+    else:
+        token_provider = get_bearer_token_provider(DefaultAzureCredential(exclude_shared_token_cache_credential=True), "https://cognitiveservices.azure.com/.default")
+        client = AzureOpenAI(
+            api_version=AZURE_OPENAI_API_VERSION,
+            azure_endpoint=AZURE_OPENAI_API_BASE,
+            azure_ad_token_provider=token_provider
+        )
 
     request_messages = request.json["messages"]
     messages = [
@@ -224,8 +235,8 @@ def conversation_without_data(request):
             "content": message["content"]
         })
 
-    response = openai.ChatCompletion.create(
-        engine=AZURE_OPENAI_MODEL,
+    response = client.chat.completions.create(
+        model=AZURE_OPENAI_MODEL,
         messages = messages,
         temperature=float(AZURE_OPENAI_TEMPERATURE),
         max_tokens=int(AZURE_OPENAI_MAX_TOKENS),
